@@ -263,12 +263,14 @@ function rowsToPlots(rows) {
   }
   const get = (r, f) => idx[f] >= 0 ? (r[idx[f]] || "").trim() : "";
   const plots = [];
+  const badIds = [];
   let skipped = 0;
   for (const r of rows.slice(1)) {
     const id = get(r, "id");
     if (!id) continue;
     const lat = toNum(get(r, "lat")), lon = toNum(get(r, "lon"));
     if (lat == null || lon == null) { skipped++; continue; }
+    if (lat < 34 || lat > 42 || lon < 19 || lon > 30) { badIds.push(id); continue; }
     plots.push({
       id, lat, lon,
       ek: get(r, "ek"), area: get(r, "area"),
@@ -279,6 +281,7 @@ function rowsToPlots(rows) {
     });
   }
   plots.skipped = skipped;
+  plots.bad = badIds;
   return plots;
 }
 
@@ -435,7 +438,14 @@ async function load(fit) {
     render(fit);
     const t = new Date().toLocaleTimeString("el-GR", { hour: "2-digit", minute: "2-digit" });
     $("updated").textContent = plots.length + " αγροτεμάχια · ενημερώθηκε " + t;
-    line.textContent = plots.skipped ? plots.skipped + " γραμμές παραλείφθηκαν γιατί δεν έχουν σωστές συντεταγμένες." : "";
+    const msgs = [];
+    if (plots.skipped) msgs.push(plots.skipped + " γραμμές παραλείφθηκαν γιατί δεν έχουν συντεταγμένες.");
+    if (plots.bad && plots.bad.length) {
+      line.className = "status-line error";
+      msgs.push("Λάθος συντεταγμένες (εκτός Ελλάδας) στα αγροτεμάχια: " + plots.bad.slice(0, 40).join(", ") +
+        (plots.bad.length > 40 ? " και άλλα " + (plots.bad.length - 40) : "") + ". Δεν εμφανίζονται στο χάρτη.");
+    }
+    line.textContent = msgs.join(" ");
   } catch (err) {
     line.className = "status-line error";
     line.textContent = err.message;
