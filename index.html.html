@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Χάρτης αγροτεμαχίων</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ink: #1d2a2c;
+    --muted: #5d6c6e;
+    --line: #d5dcdb;
+    --panel: #f2f5f4;
+    --surface: #ffffff;
+    --accent: #0e5a5a;
+    --accent-soft: #dcecec;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--surface);
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    grid-template-rows: 100%;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    padding: 20px 18px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+  .totals { display: flex; gap: 10px; }
+  .totals > div {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .totals b { display: block; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+  .totals span { color: var(--muted); font-size: 12px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  .legend { display: flex; flex-direction: column; gap: 4px; }
+  .legend label {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .legend label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .legend input { accent-color: var(--accent); margin: 0; }
+  .swatch { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #2b3638; flex: none; }
+  .legend .name { flex: 1; }
+  .legend .count { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .filters { display: grid; gap: 10px; }
+  .field label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 3px; }
+  select, input[type="search"] {
+    width: 100%;
+    font: inherit;
+    color: var(--ink);
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+  }
+  select:focus-visible, input[type="search"]:focus-visible, button:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px;
+  }
+  .actions { display: flex; gap: 8px; }
+  button {
+    font: inherit; font-weight: 500;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:hover { filter: brightness(0.96); }
+  .status-line { font-size: 12px; color: var(--muted); }
+  .status-line.error { color: #b42318; }
+  .demo-note {
+    background: #fff4d6; border: 1px solid #ecd48a; border-radius: 6px;
+    padding: 8px 10px; font-size: 12.5px;
+  }
+  #map { height: 100%; width: 100%; }
+
+  .leaflet-popup-content { margin: 14px 16px; font-family: inherit; font-size: 13px; min-width: 220px; }
+  .pop-title { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 500;
+    padding: 2px 9px 2px 7px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--panel);
+    margin-bottom: 8px;
+  }
+  .badge i { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #2b3638; display: inline-block; }
+  .pop-table { border-collapse: collapse; width: 100%; }
+  .pop-table th { text-align: left; font-weight: 400; color: var(--muted); padding: 2px 12px 2px 0; vertical-align: top; white-space: nowrap; }
+  .pop-table td { padding: 2px 0; font-weight: 500; }
+  .pop-note { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink); }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: 46% 54%; }
+    aside { order: 2; border-right: 0; border-top: 1px solid var(--line); }
+    #map { order: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<aside>
+  <header>
+    <h1>Χάρτης αγροτεμαχίων</h1>
+    <div class="sub" id="updated">Φόρτωση δεδομένων…</div>
+  </header>
+
+  <div class="demo-note" id="demoNote" hidden>
+    Εμφανίζονται δοκιμαστικά δεδομένα. Βάλτε τον σύνδεσμο του Google Sheet στη μεταβλητή <b>CSV_URL</b> στην αρχή του κώδικα.
+  </div>
+
+  <div class="totals">
+    <div><b id="totCount">0</b><span>αγροτεμάχια στο χάρτη</span></div>
+    <div><b id="totMW">0</b><span>MW συνολικά</span></div>
+  </div>
+
+  <section>
+    <h2>Status</h2>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <section>
+    <h2>Αναζήτηση και φίλτρα</h2>
+    <div class="filters">
+      <div class="field">
+        <label for="search">Αριθμός αγροτεμαχίου</label>
+        <input type="search" id="search" placeholder="π.χ. 117" autocomplete="off">
+      </div>
+      <div id="selects" class="filters"></div>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="primary" id="refresh">Ανανέωση δεδομένων</button>
+    <button id="reset">Καθαρισμός φίλτρων</button>
+  </div>
+  <div class="status-line" id="statusLine"></div>
+</aside>
+
+<div id="map" role="application" aria-label="Χάρτης αγροτεμαχίων"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ============================================================
+   ΡΥΘΜΙΣΕΙΣ
+   ============================================================ */
+
+// Ο σύνδεσμος CSV από το Google Sheets:
+// Αρχείο > Κοινοποίηση > Δημοσίευση στον ιστό > επιλέγετε το φύλλο και "Τιμές χωρισμένες με κόμμα (.csv)"
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRhEzLFoYtyPVCAr4L0cyTHyx8kEzEKvYhPOO1cBDduQLwy10Dw0NCR10vOK2F0fg/pub?gid=916249843&single=true&output=csv";
+
+// Κάθε πότε ανανεώνονται αυτόματα τα δεδομένα (σε λεπτά). 0 = μόνο με το κουμπί.
+const AUTO_REFRESH_MINUTES = 5;
+
+// Τα status όπως τα γράφετε στο excel (χωρίς σημασία πεζά ή κεφαλαία) και τα χρώματά τους.
+const STATUSES = [
+  { key: "Clear",       color: "#ffffff", label: "Clear" },
+  { key: "To be solved", color: "#facc15", label: "To be solved" },
+  { key: "Cancelled",   color: "#dc2626", label: "Cancelled" }
+];
+const OTHER_STATUS = { key: "__other", color: "#9aa5a7", label: "Άλλο / χωρίς status" };
+
+// Οι επικεφαλίδες των στηλών του φύλλου. Αν αλλάξετε όνομα σε στήλη αλλάξτε το εδώ.
+const COLS = {
+  id:       ["Αριθμός"],
+  ek:       ["ΕΚ"],
+  area:     ["Περιοχή"],
+  power:    ["Ισχύς"],
+  status:   ["Status"],
+  merge:    ["Συνένωση"],
+  cluster:  ["Cluster"],
+  landuse:  ["Χρήση Γης"],
+  lat:      ["Lat"],
+  lon:      ["Lon"],
+  comments: ["Σχόλια"]
+};
+
+// Φίλτρα (αναπτυσσόμενες λίστες) που εμφανίζονται στο πλάι.
+const FILTERS = [
+  { field: "ek",      label: "Ενεργειακή Κοινότητα (ΕΚ)" },
+  { field: "area",    label: "Περιοχή" },
+  { field: "cluster", label: "Cluster" },
+  { field: "merge",   label: "Συνένωση" },
+  { field: "landuse", label: "Χρήση Γης" }
+];
+
+/* ============================================================
+   ΚΩΔΙΚΑΣ
+   ============================================================ */
+
+const norm = s => String(s == null ? "" : s)
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .toLowerCase().replace(/\s+/g, " ").trim();
+
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [], cur = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { cur += '"'; i++; } else inQ = false;
+      } else cur += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(cur); cur = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cur); cur = "";
+      if (row.some(v => v !== "")) rows.push(row);
+      row = [];
+    } else cur += c;
+  }
+  row.push(cur);
+  if (row.some(v => v !== "")) rows.push(row);
+  return rows;
+}
+
+const toNum = v => {
+  const n = parseFloat(String(v == null ? "" : v).trim().replace(/\s/g, "").replace(",", "."));
+  return isNaN(n) ? null : n;
+};
+
+function rowsToPlots(rows) {
+  if (rows.length < 2) return [];
+  const header = rows[0].map(norm);
+  const idx = {};
+  for (const f in COLS) {
+    idx[f] = header.findIndex(h => COLS[f].map(norm).includes(h));
+  }
+  const missing = ["id", "lat", "lon", "status"].filter(f => idx[f] < 0);
+  if (missing.length) {
+    throw new Error("Δεν βρέθηκαν οι στήλες: " + missing.map(f => COLS[f][0]).join(", ") +
+      ". Ελέγξτε τις επικεφαλίδες στην πρώτη γραμμή του φύλλου.");
+  }
+  const get = (r, f) => idx[f] >= 0 ? (r[idx[f]] || "").trim() : "";
+  const plots = [];
+  let skipped = 0;
+  for (const r of rows.slice(1)) {
+    const id = get(r, "id");
+    if (!id) continue;
+    const lat = toNum(get(r, "lat")), lon = toNum(get(r, "lon"));
+    if (lat == null || lon == null) { skipped++; continue; }
+    plots.push({
+      id, lat, lon,
+      ek: get(r, "ek"), area: get(r, "area"),
+      power: toNum(get(r, "power")), powerRaw: get(r, "power"),
+      status: get(r, "status"), merge: get(r, "merge"),
+      cluster: get(r, "cluster"), landuse: get(r, "landuse"),
+      comments: get(r, "comments")
+    });
+  }
+  plots.skipped = skipped;
+  return plots;
+}
+
+function statusOf(plot) {
+  const n = norm(plot.status);
+  return STATUSES.find(s => norm(s.key) === n) || OTHER_STATUS;
+}
+
+/* ---------- χάρτης ---------- */
+const map = L.map("map", { zoomControl: true, preferCanvas: true }).setView([40.78, 21.41], 10);
+const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: "&copy; OpenStreetMap"
+});
+const satellite = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+  maxZoom: 19, attribution: "Tiles &copy; Esri"
+});
+satellite.addTo(map);
+L.control.layers({ "Δορυφορικός": satellite, "Οδικός": street }, null, { position: "topright" }).addTo(map);
+const layer = L.layerGroup().addTo(map);
+
+/* ---------- κατάσταση ---------- */
+let plots = [];
+let markers = new Map();
+const hiddenStatuses = new Set();
+const filterValues = {};
+let searchText = "";
+let firstFit = true;
+
+const $ = id => document.getElementById(id);
+
+function fmtMW(n) {
+  return n.toLocaleString("el-GR", { maximumFractionDigits: 3 });
+}
+
+function popupHTML(p) {
+  const st = statusOf(p);
+  const rows = [
+    ["ΕΚ", p.ek], ["Περιοχή", p.area],
+    ["Ισχύς", p.power != null ? fmtMW(p.power) + " MW" : p.powerRaw],
+    ["Συνένωση", p.merge], ["Cluster", p.cluster], ["Χρήση Γης", p.landuse]
+  ].filter(r => r[1] !== "" && r[1] != null);
+  return `<div class="pop-title">Αγροτεμάχιο ${esc(p.id)}</div>
+    <div class="badge"><i style="background:${st.color}"></i>${esc(p.status || st.label)}</div>
+    <table class="pop-table">${rows.map(r => `<tr><th>${esc(r[0])}</th><td>${esc(r[1])}</td></tr>`).join("")}</table>
+    ${p.comments ? `<div class="pop-note">${esc(p.comments)}</div>` : ""}`;
+}
+
+function passes(p) {
+  if (hiddenStatuses.has(statusOf(p).key)) return false;
+  for (const f of FILTERS) {
+    const v = filterValues[f.field];
+    if (v && p[f.field] !== v) return false;
+  }
+  if (searchText && !norm(p.id).includes(norm(searchText))) return false;
+  return true;
+}
+
+function render(fit) {
+  layer.clearLayers();
+  markers = new Map();
+  const shown = plots.filter(passes);
+  // Τα Cancelled μπαίνουν πρώτα ώστε οι υπόλοιποι δείκτες να φαίνονται από πάνω.
+  const order = p => (norm(p.status) === "cancelled" ? 0 : 1);
+  shown.sort((a, b) => order(a) - order(b));
+  let mw = 0;
+  for (const p of shown) {
+    const st = statusOf(p);
+    const m = L.circleMarker([p.lat, p.lon], {
+      radius: 8, weight: 2, color: "#2b3638",
+      fillColor: st.color, fillOpacity: 0.95
+    }).bindPopup(popupHTML(p)).bindTooltip(String(p.id), { direction: "top", offset: [0, -6] });
+    m.addTo(layer);
+    markers.set(p.id, m);
+    if (p.power != null) mw += p.power;
+  }
+  $("totCount").textContent = shown.length;
+  $("totMW").textContent = fmtMW(mw);
+  if (fit && shown.length) {
+    map.fitBounds(L.latLngBounds(shown.map(p => [p.lat, p.lon])), { padding: [40, 40], maxZoom: 15 });
+  }
+}
+
+function buildLegend() {
+  const items = STATUSES.concat([OTHER_STATUS]);
+  const counts = {};
+  for (const p of plots) { const k = statusOf(p).key; counts[k] = (counts[k] || 0) + 1; }
+  $("legend").innerHTML = items
+    .filter(s => s !== OTHER_STATUS || counts[s.key])
+    .map(s => `<label>
+      <input type="checkbox" data-key="${esc(s.key)}" ${hiddenStatuses.has(s.key) ? "" : "checked"}>
+      <span class="swatch" style="background:${s.color}"></span>
+      <span class="name">${esc(s.label)}</span>
+      <span class="count">${counts[s.key] || 0}</span>
+    </label>`).join("");
+  $("legend").querySelectorAll("input").forEach(cb => {
+    cb.addEventListener("change", () => {
+      if (cb.checked) hiddenStatuses.delete(cb.dataset.key); else hiddenStatuses.add(cb.dataset.key);
+      render(false);
+    });
+  });
+}
+
+function buildSelects() {
+  $("selects").innerHTML = "";
+  for (const f of FILTERS) {
+    const values = [...new Set(plots.map(p => p[f.field]).filter(v => v !== ""))]
+      .sort((a, b) => String(a).localeCompare(String(b), "el", { numeric: true }));
+    if (!values.length) continue;
+    if (filterValues[f.field] && !values.includes(filterValues[f.field])) filterValues[f.field] = "";
+    const wrap = document.createElement("div");
+    wrap.className = "field";
+    wrap.innerHTML = `<label for="f_${f.field}">${esc(f.label)}</label>
+      <select id="f_${f.field}">
+        <option value="">Όλα</option>
+        ${values.map(v => `<option value="${esc(v)}" ${filterValues[f.field] === v ? "selected" : ""}>${esc(v)}</option>`).join("")}
+      </select>`;
+    $("selects").appendChild(wrap);
+    wrap.querySelector("select").addEventListener("change", e => {
+      filterValues[f.field] = e.target.value;
+      render(true);
+    });
+  }
+}
+
+function demoPlots() {
+  const base = [
+    ["101", "ΕΚ Φλώρινας", "Καύκασος", 0.998, "Clear", "1", "A", "Αρδευόμενη", 40.7612, 21.3511],
+    ["102", "ΕΚ Φλώρινας", "Βαθύλακκος", 0.85, "To be solved", "2", "A", "Ξηρική", 40.7899, 21.4402],
+    ["103", "ΕΚ Αμυνταίου", "Αμμοχώρι", 0.5, "Cancelled", "1", "B", "Ξηρική", 40.7301, 21.2202]
+  ];
+  return base.map(b => ({
+    id: b[0], ek: b[1], area: b[2], power: b[3], powerRaw: String(b[3]),
+    status: b[4], merge: b[5], cluster: b[6], landuse: b[7], lat: b[8], lon: b[9], comments: ""
+  }));
+}
+
+async function load(fit) {
+  const line = $("statusLine");
+  line.className = "status-line";
+  line.textContent = "Ανανέωση…";
+  try {
+    if (!CSV_URL) {
+      plots = demoPlots();
+      $("demoNote").hidden = false;
+    } else {
+      const sep = CSV_URL.includes("?") ? "&" : "?";
+      const res = await fetch(CSV_URL + sep + "t=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error("Το φύλλο δεν φορτώθηκε (κωδικός " + res.status + "). Ελέγξτε ότι είναι δημοσιευμένο ως CSV.");
+      plots = rowsToPlots(parseCSV(await res.text()));
+      $("demoNote").hidden = true;
+    }
+    buildLegend();
+    buildSelects();
+    render(fit);
+    const t = new Date().toLocaleTimeString("el-GR", { hour: "2-digit", minute: "2-digit" });
+    $("updated").textContent = plots.length + " αγροτεμάχια · ενημερώθηκε " + t;
+    line.textContent = plots.skipped ? plots.skipped + " γραμμές παραλείφθηκαν γιατί δεν έχουν σωστές συντεταγμένες." : "";
+  } catch (err) {
+    line.className = "status-line error";
+    line.textContent = err.message;
+    $("updated").textContent = "Η φόρτωση απέτυχε";
+  }
+}
+
+$("refresh").addEventListener("click", () => load(false));
+$("reset").addEventListener("click", () => {
+  hiddenStatuses.clear();
+  for (const k in filterValues) filterValues[k] = "";
+  searchText = "";
+  $("search").value = "";
+  buildLegend(); buildSelects(); render(true);
+});
+$("search").addEventListener("input", e => { searchText = e.target.value; render(false); });
+$("search").addEventListener("keydown", e => {
+  if (e.key !== "Enter") return;
+  const exact = markers.get(searchText.trim());
+  const target = exact || (markers.size === 1 ? [...markers.values()][0] : null);
+  if (target) { map.setView(target.getLatLng(), 16); target.openPopup(); }
+  else if (markers.size) {
+    map.fitBounds(L.featureGroup([...markers.values()]).getBounds(), { padding: [40, 40], maxZoom: 15 });
+  }
+});
+
+load(true);
+if (AUTO_REFRESH_MINUTES > 0) setInterval(() => load(false), AUTO_REFRESH_MINUTES * 60000);
+</script>
+</body>
+</html>
