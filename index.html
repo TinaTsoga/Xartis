@@ -98,6 +98,28 @@
     background: #fff4d6; border: 1px solid #ecd48a; border-radius: 6px;
     padding: 8px 10px; font-size: 12.5px;
   }
+  details.multi { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  details.multi summary {
+    list-style: none; cursor: pointer; padding: 7px 28px 7px 9px; position: relative;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  details.multi summary::-webkit-details-marker { display: none; }
+  details.multi summary::after {
+    content: ""; position: absolute; right: 11px; top: 50%;
+    width: 6px; height: 6px; margin-top: -5px;
+    border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+    transform: rotate(45deg);
+  }
+  details.multi[open] summary::after { transform: rotate(-135deg); margin-top: -2px; }
+  details.multi summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 6px; }
+  .multi-body { border-top: 1px solid var(--line); max-height: 220px; overflow-y: auto; padding: 6px; }
+  .multi-clear { width: 100%; margin-bottom: 4px; padding: 5px 8px; font-size: 12.5px; color: var(--muted); }
+  .multi-body .opt {
+    display: flex; align-items: center; gap: 9px; padding: 5px 6px;
+    margin: 0; color: var(--ink); font-size: 14px; cursor: pointer; border-radius: 4px;
+  }
+  .multi-body .opt:hover { background: var(--accent-soft); }
+  .multi-body .opt input { accent-color: var(--accent); margin: 0; }
   #map { height: 100%; width: 100%; }
 
   .leaflet-popup-content { margin: 14px 16px; font-family: inherit; font-size: 13px; min-width: 220px; }
@@ -341,7 +363,7 @@ function passes(p) {
   if (hiddenStatuses.has(statusOf(p).key)) return false;
   for (const f of FILTERS) {
     const v = filterValues[f.field];
-    if (v && p[f.field] !== v) return false;
+    if (v && v.size && !v.has(p[f.field])) return false;
   }
   if (searchText && !norm(p.id).includes(norm(searchText))) return false;
   return true;
@@ -396,23 +418,52 @@ function buildSelects() {
   $("selects").innerHTML = "";
   for (const f of FILTERS) {
     const values = [...new Set(plots.map(p => p[f.field]).filter(v => v !== ""))]
-      .sort((a, b) => String(a).localeCompare(String(b), "el", { numeric: true }));
+      .sort((x, y) => String(x).localeCompare(String(y), "el", { numeric: true }));
     if (!values.length) continue;
-    if (filterValues[f.field] && !values.includes(filterValues[f.field])) filterValues[f.field] = "";
+    const sel = new Set([...(filterValues[f.field] || [])].filter(v => values.includes(v)));
+    filterValues[f.field] = sel;
+
     const wrap = document.createElement("div");
     wrap.className = "field";
-    wrap.innerHTML = `<label for="f_${f.field}">${esc(f.label)}</label>
-      <select id="f_${f.field}">
-        <option value="">Όλα</option>
-        ${values.map(v => `<option value="${esc(v)}" ${filterValues[f.field] === v ? "selected" : ""}>${esc(v)}</option>`).join("")}
-      </select>`;
+    wrap.innerHTML = `<label>${esc(f.label)}</label>
+      <details class="multi">
+        <summary></summary>
+        <div class="multi-body">
+          <button type="button" class="multi-clear">Καθαρισμός επιλογών</button>
+          ${values.map(v => `<label class="opt"><input type="checkbox" value="${esc(v)}"><span>${esc(v)}</span></label>`).join("")}
+        </div>
+      </details>`;
     $("selects").appendChild(wrap);
-    wrap.querySelector("select").addEventListener("change", e => {
-      filterValues[f.field] = e.target.value;
+
+    const summary = wrap.querySelector("summary");
+    const boxes = [...wrap.querySelectorAll("input[type=checkbox]")];
+    const refresh = () => {
+      summary.textContent = sel.size === 0 ? "Όλα" :
+        sel.size === 1 ? [...sel][0] : sel.size + " επιλεγμένα";
+    };
+    boxes.forEach(cb => {
+      cb.checked = sel.has(cb.value);
+      cb.addEventListener("change", () => {
+        if (cb.checked) sel.add(cb.value); else sel.delete(cb.value);
+        refresh();
+        render(true);
+      });
+    });
+    wrap.querySelector(".multi-clear").addEventListener("click", () => {
+      sel.clear();
+      boxes.forEach(cb => { cb.checked = false; });
+      refresh();
       render(true);
     });
+    refresh();
   }
 }
+
+document.addEventListener("click", e => {
+  document.querySelectorAll("details.multi[open]").forEach(d => {
+    if (!d.contains(e.target)) d.removeAttribute("open");
+  });
+});
 
 function demoPlots() {
   const base = [
@@ -464,7 +515,7 @@ async function load(fit) {
 $("refresh").addEventListener("click", () => load(false));
 $("reset").addEventListener("click", () => {
   hiddenStatuses.clear();
-  for (const k in filterValues) filterValues[k] = "";
+  for (const k in filterValues) filterValues[k] = new Set();
   searchText = "";
   $("search").value = "";
   buildLegend(); buildSelects(); render(true);
