@@ -208,6 +208,12 @@ const STATUSES = [
 ];
 const OTHER_STATUS = { key: "__other", color: "#9aa5a7", label: "Άλλο / χωρίς status" };
 
+// Cluster που έχουν δικό τους χρώμα. Τα αγροτεμάχια αυτών των Cluster βάφονται με αυτό το χρώμα
+// ανεξάρτητα από το status (π.χ. όταν το status είναι κενό).
+const CLUSTER_COLORS = [
+  { key: "cluster:Υ/Σ", cluster: ["Υ/Σ", "Y/S"], color: "#2563eb", label: "Υ/Σ" }
+];
+
 // Οι επικεφαλίδες των στηλών του φύλλου. Αν αλλάξετε όνομα σε στήλη αλλάξτε το εδώ.
 const COLS = {
   id:       ["Αριθμός"],
@@ -308,6 +314,8 @@ function rowsToPlots(rows) {
 }
 
 function statusOf(plot) {
+  const c = CLUSTER_COLORS.find(x => [].concat(x.cluster).some(n => norm(n) === norm(plot.cluster)));
+  if (c) return c;
   const n = norm(plot.status);
   return STATUSES.find(s => norm(s.key) === n) || OTHER_STATUS;
 }
@@ -395,7 +403,7 @@ function render(fit) {
 }
 
 function buildLegend() {
-  const items = STATUSES.concat([OTHER_STATUS]);
+  const items = STATUSES.concat(CLUSTER_COLORS, [OTHER_STATUS]);
   const counts = {};
   for (const p of plots) { const k = statusOf(p).key; counts[k] = (counts[k] || 0) + 1; }
   $("legend").innerHTML = items
