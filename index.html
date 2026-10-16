@@ -205,15 +205,16 @@ const STATUSES = [
   { key: "Clear",       color: "#ffffff", label: "Clear" },
   { key: "To be solved", color: "#facc15", label: "To be solved" },
   { key: "Cancelled",   color: "#dc2626", label: "Cancelled" },
-  { key: "Others",      color: "#84e32b", label: "Others" }
+  { key: "Others",      color: "#84e32b", label: "Others" },
+  // Υποσταθμός: φαίνεται πάντα όποιο φίλτρο κι αν διαλέξετε και δεν μετράει στα συνολικά.
+  // Κρύβεται μόνο αν ξετσεκάρετε τη γραμμή του στο υπόμνημα.
+  { key: "Υ/Σ", aliases: ["Y/S", "Substation"], color: "#2563eb", label: "Υ/Σ (υποσταθμός)",
+    alwaysVisible: true, excludeFromTotals: true }
 ];
 const OTHER_STATUS = { key: "__other", color: "#9aa5a7", label: "Άλλο / χωρίς status" };
 
-// Cluster που έχουν δικό τους χρώμα. Τα αγροτεμάχια αυτών των Cluster βάφονται με αυτό το χρώμα
-// ανεξάρτητα από το status (π.χ. όταν το status είναι κενό).
-const CLUSTER_COLORS = [
-  { key: "cluster:Υ/Σ", cluster: ["Υ/Σ", "Y/S"], color: "#2563eb", label: "Υ/Σ" }
-];
+// Προαιρετικά: Cluster με δικό τους χρώμα (ανεξάρτητα από το status). Αυτή τη στιγμή δεν χρησιμοποιείται.
+const CLUSTER_COLORS = [];
 
 // Οι επικεφαλίδες των στηλών του φύλλου. Αν αλλάξετε όνομα σε στήλη αλλάξτε το εδώ.
 const COLS = {
@@ -318,7 +319,7 @@ function statusOf(plot) {
   const c = CLUSTER_COLORS.find(x => [].concat(x.cluster).some(n => norm(n) === norm(plot.cluster)));
   if (c) return c;
   const n = norm(plot.status);
-  return STATUSES.find(s => norm(s.key) === n) || OTHER_STATUS;
+  return STATUSES.find(s => [s.key].concat(s.aliases || []).some(k => norm(k) === n)) || OTHER_STATUS;
 }
 
 /* ---------- χάρτης ---------- */
@@ -369,10 +370,13 @@ function popupHTML(p) {
 }
 
 function passes(p) {
-  if (hiddenStatuses.has(statusOf(p).key)) return false;
-  for (const f of FILTERS) {
-    const v = filterValues[f.field];
-    if (v && v.size && !v.has(p[f.field])) return false;
+  const st = statusOf(p);
+  if (hiddenStatuses.has(st.key)) return false;
+  if (!st.alwaysVisible) {
+    for (const f of FILTERS) {
+      const v = filterValues[f.field];
+      if (v && v.size && !v.has(p[f.field])) return false;
+    }
   }
   if (searchText && !norm(p.id).includes(norm(searchText))) return false;
   return true;
@@ -394,12 +398,14 @@ function render(fit) {
     }).bindPopup(popupHTML(p)).bindTooltip(String(p.id), { direction: "top", offset: [0, -6] });
     m.addTo(layer);
     markers.set(p.id, m);
-    if (p.power != null) mw += p.power;
+    if (p.power != null && !st.excludeFromTotals) mw += p.power;
   }
-  $("totCount").textContent = shown.length;
+  $("totCount").textContent = shown.filter(p => !statusOf(p).excludeFromTotals).length;
   $("totMW").textContent = fmtMW(mw);
   if (fit && shown.length) {
-    map.fitBounds(L.latLngBounds(shown.map(p => [p.lat, p.lon])), { padding: [40, 40], maxZoom: 15 });
+    const core = shown.filter(p => !statusOf(p).alwaysVisible);
+    const pts = (core.length ? core : shown).map(p => [p.lat, p.lon]);
+    map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 15 });
   }
 }
 
