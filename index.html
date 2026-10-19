@@ -120,6 +120,23 @@
   }
   .multi-body .opt:hover { background: var(--accent-soft); }
   .multi-body .opt input { accent-color: var(--accent); margin: 0; }
+  .measure-box {
+    background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25); padding: 8px; width: 270px;
+    font-family: inherit; font-size: 13px; color: var(--ink);
+  }
+  .measure-box button { padding: 6px 10px; font-size: 13px; }
+  .measure-box .m-toggle { width: 100%; }
+  .measure-box .m-toggle.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .measure-box .m-help { color: var(--muted); font-size: 12px; margin: 8px 0 6px; }
+  .measure-box .m-total { font-size: 18px; font-weight: 600; margin: 6px 0 2px; letter-spacing: -0.01em; }
+  .measure-box .m-list { max-height: 130px; overflow-y: auto; margin: 6px 0; padding: 0; list-style: none; }
+  .measure-box .m-list li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-top: 1px solid var(--line); }
+  .measure-box .m-list li span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .measure-box .m-actions { display: flex; gap: 6px; }
+  .measure-box .m-actions button { flex: 1; }
+  .measure-box .m-note { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+  .measuring, .measuring .leaflet-interactive { cursor: crosshair !important; }
   #map { height: 100%; width: 100%; }
 
   .leaflet-popup-content { margin: 14px 16px; font-family: inherit; font-size: 13px; min-width: 220px; }
@@ -394,8 +411,12 @@ function render(fit) {
     const st = statusOf(p);
     const m = L.circleMarker([p.lat, p.lon], {
       radius: 8, weight: 2, color: "#2b3638",
-      fillColor: st.color, fillOpacity: 0.95
+      fillColor: st.color, fillOpacity: 0.95,
+      bubblingMouseEvents: false
     }).bindPopup(popupHTML(p)).bindTooltip(String(p.id), { direction: "top", offset: [0, -6] });
+    m.on("click", () => {
+      if (measuring) { m.closePopup(); addMeasurePoint(m.getLatLng(), "Αγρ. " + p.id); }
+    });
     m.addTo(layer);
     markers.set(p.id, m);
     if (p.power != null && !st.excludeFromTotals) mw += p.power;
@@ -545,6 +566,91 @@ $("search").addEventListener("keydown", e => {
     map.fitBounds(L.featureGroup([...markers.values()]).getBounds(), { padding: [40, 40], maxZoom: 15 });
   }
 });
+
+/* ---------- μέτρηση αποστάσεων ---------- */
+let measuring = false;
+const mPoints = [];
+const mLayer = L.layerGroup().addTo(map);
+let mLine = null;
+
+const fmtDist = d => d < 1000
+  ? Math.round(d).toLocaleString("el-GR") + " μ."
+  : (d / 1000).toLocaleString("el-GR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " χλμ.";
+
+const MeasureControl = L.Control.extend({
+  options: { position: "topleft" },
+  onAdd() {
+    const box = L.DomUtil.create("div", "measure-box");
+    box.innerHTML = `
+      <button type="button" class="m-toggle">Μέτρηση αποστάσεων</button>
+      <div class="m-body" hidden>
+        <div class="m-help"></div>
+        <div class="m-total">0 μ.</div>
+        <ul class="m-list"></ul>
+        <div class="m-actions">
+          <button type="button" class="m-undo">Αναίρεση</button>
+          <button type="button" class="m-clear">Καθαρισμός</button>
+        </div>
+        <div class="m-note">Η απόσταση μετριέται σε ευθεία γραμμή και όχι κατά μήκος δρόμων.</div>
+      </div>`;
+    L.DomEvent.disableClickPropagation(box);
+    L.DomEvent.disableScrollPropagation(box);
+    this._box = box;
+    box.querySelector(".m-toggle").addEventListener("click", () => setMeasuring(!measuring));
+    box.querySelector(".m-undo").addEventListener("click", () => { mPoints.pop(); refreshMeasure(); });
+    box.querySelector(".m-clear").addEventListener("click", () => { mPoints.length = 0; refreshMeasure(); });
+    return box;
+  }
+});
+const measureCtl = new MeasureControl().addTo(map);
+
+function setMeasuring(on) {
+  measuring = on;
+  map.getContainer().classList.toggle("measuring", on);
+  refreshMeasure();
+}
+
+function addMeasurePoint(ll, name) {
+  mPoints.push({ ll: L.latLng(ll), name: name });
+  refreshMeasure();
+}
+
+function refreshMeasure() {
+  const box = measureCtl._box;
+  const toggle = box.querySelector(".m-toggle");
+  toggle.classList.toggle("on", measuring);
+  toggle.textContent = measuring ? "Σταμάτημα μέτρησης" : "Μέτρηση αποστάσεων";
+  box.querySelector(".m-body").hidden = !(measuring || mPoints.length);
+  box.querySelector(".m-help").textContent = measuring
+    ? "Πατήστε στο χάρτη ή πάνω σε αγροτεμάχιο για να βάλετε σημεία."
+    : "Η μέτρηση είναι σταματημένη. Πατήστε το κουμπί για να συνεχίσετε.";
+
+  mLayer.clearLayers();
+  mLine = null;
+  if (mPoints.length > 1) {
+    mLine = L.polyline(mPoints.map(q => q.ll), { color: "#111827", weight: 3, dashArray: "6 6", interactive: false }).addTo(mLayer);
+  }
+  mPoints.forEach((q, i) => {
+    L.circleMarker(q.ll, { radius: 5, weight: 2, color: "#111827", fillColor: "#ffffff", fillOpacity: 1, interactive: false }).addTo(mLayer);
+  });
+
+  let total = 0;
+  const list = box.querySelector(".m-list");
+  list.innerHTML = "";
+  for (let i = 1; i < mPoints.length; i++) {
+    const d = mPoints[i - 1].ll.distanceTo(mPoints[i].ll);
+    total += d;
+    const a = mPoints[i - 1].name || "Σημείο " + i;
+    const b = mPoints[i].name || "Σημείο " + (i + 1);
+    const li = document.createElement("li");
+    li.innerHTML = `<span>${esc(a)} → ${esc(b)}</span><span>${fmtDist(d)}</span>`;
+    list.appendChild(li);
+  }
+  box.querySelector(".m-total").textContent = (mPoints.length > 1 ? "Σύνολο: " : "") + fmtDist(total);
+  list.scrollTop = list.scrollHeight;
+}
+
+map.on("click", e => { if (measuring) addMeasurePoint(e.latlng, null); });
 
 load(true);
 if (AUTO_REFRESH_MINUTES > 0) setInterval(() => load(false), AUTO_REFRESH_MINUTES * 60000);
